@@ -3,6 +3,10 @@
 
 A comprehensive Model Context Protocol (MCP) server for accessing the PubChem chemical database. This server provides access to over 110 million chemical compounds with extensive molecular properties, bioassay data, and chemical informatics tools.
 
+<a href="https://glama.ai/mcp/servers/@Augmented-Nature/Augmented-Nature-PubChem-MCP-Server">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@Augmented-Nature/Augmented-Nature-PubChem-MCP-Server/badge" alt="Unofficial PubChem Server MCP server" />
+</a>
+
 ## Features
 
 ### 🔍 **Chemical Search & Retrieval (6 tools)**
