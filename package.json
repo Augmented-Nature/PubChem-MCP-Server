@@ -24,7 +24,7 @@
   "author": "Augmented Nature <hello@augmentednature.ai>",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.6.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.6.0"
   },
   "devDependencies": {
