@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createServer as createHttpServer } from 'node:http';
 import {
   CallToolRequestSchema,
   ErrorCode,
@@ -134,7 +136,7 @@ const isValidBioactivityArgs = (
 };
 
 class PubChemServer {
-  private server: Server;
+  public server: Server;
   private apiClient: AxiosInstance;
 
   constructor() {
@@ -166,10 +168,9 @@ class PubChemServer {
 
     // Error handling
     this.server.onerror = (error: any) => console.error('[MCP Error]', error);
-    process.on('SIGINT', async () => {
-      await this.server.close();
-      process.exit(0);
-    });
+    // NOTE: no process-level SIGINT handler here. In native HTTP mode we build a
+    // fresh PubChemServer per request (stateless), so a per-instance process
+    // listener would leak. Signal handling is registered once in run().
   }
 
   private setupResourceHandlers() {
@@ -4048,9 +4049,85 @@ class PubChemServer {
   }
 
   async run() {
+    process.on('SIGINT', () => process.exit(0));
+    process.on('SIGTERM', () => process.exit(0));
+
+    const mode = process.env.MCP_TRANSPORT || 'stdio';
+    if (mode === 'http' || mode === 'streamable-http') {
+      await this.runHttp();
+      return;
+    }
+
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('PubChem MCP server running on stdio');
+  }
+
+  // Native single-process streamable-HTTP transport (no supergateway). PubChem is
+  // a stateless API proxy, so we run in STATELESS mode: each POST gets a fresh
+  // Server + transport, isolating concurrent requests without any session state.
+  private async runHttp() {
+    const host = process.env.MCP_HOST || '127.0.0.1';
+    const port = parseInt(process.env.MCP_PORT || '8000', 10);
+
+    const httpServer = createHttpServer((req, res) => {
+      void (async () => {
+        if (!req.url || !req.url.replace(/\/+$/, '').endsWith('/mcp')) {
+          res.statusCode = 404;
+          res.end();
+          return;
+        }
+        if (req.method !== 'POST') {
+          // Stateless mode: no server-initiated SSE stream, so GET/DELETE are N/A.
+          res.statusCode = 405;
+          res.setHeader('Allow', 'POST');
+          res.end();
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk as Buffer);
+        let body: unknown;
+        try {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          body = raw ? JSON.parse(raw) : undefined;
+        } catch {
+          res.statusCode = 400;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              error: { code: -32700, message: 'Parse error' },
+              id: null,
+            }),
+          );
+          return;
+        }
+
+        const instance = new PubChemServer();
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: undefined,
+        });
+        res.on('close', () => {
+          void transport.close();
+          void instance.server.close();
+        });
+        await instance.server.connect(transport);
+        await transport.handleRequest(req, res, body);
+      })().catch((error) => {
+        console.error('[HTTP handler error]', error);
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.end();
+        }
+      });
+    });
+
+    httpServer.listen(port, host, () =>
+      console.error(
+        `PubChem MCP server running on http://${host}:${port}/mcp (stateless streamable-HTTP)`,
+      ),
+    );
   }
 }
 
