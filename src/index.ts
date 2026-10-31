@@ -386,7 +386,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
               format: { type: 'string', enum: ['json', 'sdf', 'xml', 'asnt', 'asnb'], description: 'Output format (default: json)' },
             },
             required: ['cid'],
@@ -431,7 +431,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
             },
             required: ['cid'],
           },
@@ -481,7 +481,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
               conformer_type: { type: 'string', enum: ['3d', '2d'], description: 'Type of conformer data (default: 3d)' },
             },
             required: ['cid'],
@@ -493,7 +493,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
             },
             required: ['cid'],
           },
@@ -506,7 +506,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
               properties: { type: 'array', items: { type: 'string' }, description: 'Specific properties to retrieve (optional)' },
             },
             required: ['cid'],
@@ -518,7 +518,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
               descriptor_type: { type: 'string', enum: ['all', 'basic', 'topological', '3d'], description: 'Type of descriptors (default: all)' },
             },
             required: ['cid'],
@@ -530,7 +530,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
               smiles: { type: 'string', description: 'SMILES string (alternative to CID)' },
             },
             required: [],
@@ -542,7 +542,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
               smiles: { type: 'string', description: 'SMILES string (alternative to CID)' },
             },
             required: [],
@@ -554,7 +554,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
             },
             required: ['cid'],
           },
@@ -565,7 +565,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
             },
             required: ['cid'],
           },
@@ -603,7 +603,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
               activity_outcome: { type: 'string', enum: ['active', 'inactive', 'inconclusive', 'all'], description: 'Filter by activity outcome (default: all)' },
             },
             required: ['cid'],
@@ -642,7 +642,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
             },
             required: ['cid'],
           },
@@ -653,7 +653,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
             },
             required: ['cid'],
           },
@@ -664,7 +664,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
             },
             required: ['cid'],
           },
@@ -675,7 +675,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
             },
             required: ['cid'],
           },
@@ -688,7 +688,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
             },
             required: ['cid'],
           },
@@ -699,7 +699,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
               query: { type: 'string', description: 'Patent search query (alternative to CID)' },
             },
             required: [],
@@ -711,7 +711,7 @@ class PubChemServer {
           inputSchema: {
             type: 'object',
             properties: {
-              cid: { type: ['number', 'string'], description: 'PubChem Compound ID (CID)' },
+              cid: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'PubChem Compound ID (CID)' },
             },
             required: ['cid'],
           },
