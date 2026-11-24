@@ -987,17 +987,66 @@ class PubChemServer {
       const threshold = args.threshold || 90;
       const maxRecords = args.max_records || 100;
 
-      const response = await this.apiClient.post('/compound/similarity/smiles/JSON', {
-        smiles: args.smiles,
-        Threshold: threshold,
-        MaxRecords: maxRecords,
-      });
+      // Fix: PUG-REST's similarity search rejects a JSON POST body outright
+      // ("Missing structure string" / HTTP 400) -- it only accepts
+      // application/x-www-form-urlencoded, as shown in PubChem's own docs.
+      // It's also asynchronous: a successful POST returns a ListKey, not
+      // results, and the caller must poll /compound/listkey/{key}/cids/JSON
+      // until it stops answering "Waiting". Neither of those was handled
+      // here before.
+      const searchResponse = await this.apiClient.post(
+        '/compound/similarity/smiles/JSON',
+        new URLSearchParams({
+          smiles: args.smiles,
+          Threshold: String(threshold),
+          MaxRecords: String(maxRecords),
+        }).toString(),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      );
+
+      const listKey = searchResponse.data?.Waiting?.ListKey;
+      let cidsData = searchResponse.data;
+      if (listKey) {
+        for (let attempt = 0; attempt < 10; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 2000 : 3000));
+          const pollResponse = await this.apiClient.get(
+            `/compound/listkey/${listKey}/cids/JSON`,
+            { params: { MaxRecords: maxRecords } }
+          );
+          cidsData = pollResponse.data;
+          if (!cidsData?.Waiting) break;
+        }
+        if (cidsData?.Waiting) {
+          throw new McpError(ErrorCode.InternalError, 'Similarity search timed out waiting for PubChem results');
+        }
+      }
+
+      const cids: number[] = cidsData?.IdentifierList?.CID ?? [];
+      const topCids = cids.slice(0, 20);
+      let details: any = null;
+      if (topCids.length > 0) {
+        const detailsResponse = await this.apiClient.get(
+          `/compound/cid/${topCids.join(',')}/property/MolecularFormula,MolecularWeight,CanonicalSMILES,IUPACName/JSON`
+        );
+        details = detailsResponse.data;
+      }
 
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(response.data, null, 2),
+            text: JSON.stringify(
+              {
+                query_smiles: args.smiles,
+                threshold,
+                total_found: cids.length,
+                returned_with_details: topCids.length,
+                cids,
+                details,
+              },
+              null,
+              2
+            ),
           },
         ],
       };
