@@ -1103,7 +1103,46 @@ class PubChemServer {
 
   // Placeholder implementations for remaining methods
   private async handleCalculateDescriptors(args: any) {
-    return { content: [{ type: 'text', text: JSON.stringify({ message: 'Descriptor calculation not yet implemented', args }, null, 2) }] };
+    if (!isValidCidArgs(args)) {
+      throw new McpError(ErrorCode.InvalidParams, 'Invalid CID arguments');
+    }
+    try {
+      const basic = ['MolecularWeight', 'HeavyAtomCount', 'Complexity', 'Charge'];
+      const topological = ['TPSA', 'RotatableBondCount', 'HBondDonorCount', 'HBondAcceptorCount', 'XLogP'];
+      const threeD = ['Volume3D', 'FeatureCount3D', 'ConformerCount3D'];
+      const propertiesByType: Record<string, string[]> = {
+        basic,
+        topological,
+        '3d': threeD,
+        all: [...basic, ...topological, ...threeD],
+      };
+      const descriptorType = (args as any).descriptor_type || 'all';
+      const properties = propertiesByType[descriptorType] ?? propertiesByType.all;
+      const response = await this.apiClient.get(
+        `/compound/cid/${args.cid}/property/${properties.join(',')}/JSON`
+      );
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                cid: args.cid,
+                descriptor_type: descriptorType,
+                descriptors: response.data?.PropertyTable?.Properties?.[0] ?? {},
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to calculate descriptors: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 
   private async handlePredictAdmetProperties(args: any) {
@@ -1111,7 +1150,71 @@ class PubChemServer {
   }
 
   private async handleAssessDrugLikeness(args: any) {
-    return { content: [{ type: 'text', text: JSON.stringify({ message: 'Drug-likeness assessment not yet implemented', args }, null, 2) }] };
+    if (!args || (args.cid === undefined && !args.smiles)) {
+      throw new McpError(ErrorCode.InvalidParams, 'Provide either cid or smiles');
+    }
+    try {
+      // Pure computation from properties PubChem already exposes -- no
+      // separate "drug-likeness" API exists or is needed. PAINS filtering is
+      // deliberately NOT attempted: it needs substructure matching against a
+      // pattern library, which PubChem's REST API alone cannot do.
+      const props = 'MolecularWeight,XLogP,HBondDonorCount,HBondAcceptorCount,RotatableBondCount,TPSA';
+      const path =
+        args.cid !== undefined
+          ? `/compound/cid/${args.cid}/property/${props}/JSON`
+          : `/compound/smiles/${encodeURIComponent(args.smiles)}/property/${props}/JSON`;
+      const response = await this.apiClient.get(path);
+      const p = response.data?.PropertyTable?.Properties?.[0] ?? {};
+      const mw = Number(p.MolecularWeight);
+      const logp = Number(p.XLogP);
+      const hbd = Number(p.HBondDonorCount);
+      const hba = Number(p.HBondAcceptorCount);
+      const rotatableBonds = Number(p.RotatableBondCount);
+      const tpsa = Number(p.TPSA);
+      const lipinskiViolations = [mw > 500, logp > 5, hbd > 5, hba > 10].filter(Boolean).length;
+      const veberPasses = rotatableBonds <= 10 && tpsa <= 140;
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                cid: p.CID ?? args.cid ?? null,
+                properties: {
+                  molecular_weight: mw,
+                  xlogp: logp,
+                  hbond_donor_count: hbd,
+                  hbond_acceptor_count: hba,
+                  rotatable_bond_count: rotatableBonds,
+                  tpsa,
+                },
+                lipinski_rule_of_five: {
+                  molecular_weight_le_500: mw <= 500,
+                  logp_le_5: logp <= 5,
+                  hbond_donor_le_5: hbd <= 5,
+                  hbond_acceptor_le_10: hba <= 10,
+                  violations: lipinskiViolations,
+                  passes: lipinskiViolations <= 1,
+                },
+                veber_rules: {
+                  rotatable_bonds_le_10: rotatableBonds <= 10,
+                  tpsa_le_140: tpsa <= 140,
+                  passes: veberPasses,
+                },
+                pains_filter: 'not evaluated -- requires substructure matching not available via PubChem REST alone',
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to assess drug-likeness: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 
   private async handleAnalyzeMolecularComplexity(args: any) {
@@ -1146,7 +1249,53 @@ class PubChemServer {
   }
 
   private async handleGetCompoundBioactivities(args: any) {
-    return { content: [{ type: 'text', text: JSON.stringify({ message: 'Bioactivity search not yet implemented', args }, null, 2) }] };
+    if (!isValidCidArgs(args)) {
+      throw new McpError(ErrorCode.InvalidParams, 'Invalid CID arguments');
+    }
+    try {
+      const response = await this.apiClient.get(`/compound/cid/${args.cid}/assaysummary/JSON`);
+      const columns: string[] = response.data?.Table?.Columns?.Column ?? [];
+      const rawRows: any[] = response.data?.Table?.Row ?? [];
+      const rows: string[][] = rawRows.map((r: any) => r.Cell ?? []);
+      const outcomeIndex = columns.indexOf('Activity Outcome');
+      const wantedOutcome =
+        (args as any).activity_outcome && (args as any).activity_outcome !== 'all' ? String((args as any).activity_outcome) : null;
+      const filtered =
+        wantedOutcome && outcomeIndex >= 0
+          ? rows.filter((r) => (r[outcomeIndex] || '').toLowerCase() === wantedOutcome.toLowerCase())
+          : rows;
+      // A heavily-tested compound (e.g. aspirin) has 6,000+ assay rows --
+      // the full table is ~2.3 MB, the same class of problem as issue #4's
+      // get_safety_data. Cap what's returned instead of dumping everything.
+      const MAX_ROWS = 200;
+      const activities = filtered
+        .slice(0, MAX_ROWS)
+        .map((r) => Object.fromEntries(columns.map((c, i) => [c, r[i]])));
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                cid: args.cid,
+                activity_outcome_filter: (args as any).activity_outcome ?? 'all',
+                total_matching: filtered.length,
+                returned: activities.length,
+                truncated: filtered.length > MAX_ROWS,
+                activities,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get compound bioactivities: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 
   private async handleSearchByTarget(args: any) {
@@ -1163,7 +1312,16 @@ class PubChemServer {
     }
 
     try {
-      const response = await this.apiClient.get(`/compound/cid/${args.cid}/classification/JSON`);
+      // Fix: the PUG-REST classification endpoint returns PubChem's generic
+      // classification/taxonomy hierarchy (the "Compound TOC" ontology tree) --
+      // the same multi-MB tree for every CID, not this compound's GHS hazard
+      // data. See issue #4. The correct, compound-specific GHS classification
+      // lives on PUG-View instead (a different API root than apiClient's
+      // baseURL; axios ignores baseURL when given an absolute URL).
+      const response = await this.apiClient.get(
+        `https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/${args.cid}/JSON`,
+        { params: { heading: 'GHS Classification' } }
+      );
       return {
         content: [
           {
@@ -1181,7 +1339,30 @@ class PubChemServer {
   }
 
   private async handleGetToxicityInfo(args: any) {
-    return { content: [{ type: 'text', text: JSON.stringify({ message: 'Toxicity info not yet implemented', args }, null, 2) }] };
+    if (!isValidCidArgs(args)) {
+      throw new McpError(ErrorCode.InvalidParams, 'Invalid CID arguments');
+    }
+    try {
+      // PUG-View's own per-compound "Toxicity" section (LD50, carcinogenicity,
+      // mutagenicity, etc.), not a generic cross-compound resource.
+      const response = await this.apiClient.get(
+        `https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/${args.cid}/JSON`,
+        { params: { heading: 'Toxicity' } }
+      );
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get toxicity info: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 
   private async handleAssessEnvironmentalFate(args: any) {
@@ -1189,11 +1370,61 @@ class PubChemServer {
   }
 
   private async handleGetRegulatoryInfo(args: any) {
-    return { content: [{ type: 'text', text: JSON.stringify({ message: 'Regulatory info not yet implemented', args }, null, 2) }] };
+    if (!isValidCidArgs(args)) {
+      throw new McpError(ErrorCode.InvalidParams, 'Invalid CID arguments');
+    }
+    try {
+      // PUG-View's own per-compound "Regulatory Information" section
+      // (FDA/EPA/international agency listings for this specific compound).
+      const response = await this.apiClient.get(
+        `https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/${args.cid}/JSON`,
+        { params: { heading: 'Regulatory Information' } }
+      );
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get regulatory info: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 
   private async handleGetExternalReferences(args: any) {
-    return { content: [{ type: 'text', text: JSON.stringify({ message: 'External references not yet implemented', args }, null, 2) }] };
+    if (!isValidCidArgs(args)) {
+      throw new McpError(ErrorCode.InvalidParams, 'Invalid CID arguments');
+    }
+    try {
+      // RegistryID + RN (CAS Registry Number) are what the tool's own
+      // description promises -- links to external databases (ChEMBL,
+      // DrugBank, KEGG, etc. register their own IDs under RegistryID).
+      // Deliberately NOT requesting PatentID/PubMedID/GeneID here even
+      // though the xrefs endpoint supports them: for a heavily-annotated
+      // compound (e.g. CID 2244, aspirin) PatentID alone returns ~3 MB and
+      // PubMedID ~0.5 MB, neither of which is "an external database
+      // reference" in the sense this tool advertises -- that's what the
+      // separate search_patents / get_literature_references tools are for.
+      const response = await this.apiClient.get(`/compound/cid/${args.cid}/xrefs/RegistryID,RN/JSON`);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(response.data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to get external references: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
   }
 
   private async handleSearchPatents(args: any) {
